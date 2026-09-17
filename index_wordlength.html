@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Word Length Classifier</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e6e8eb;
+    --muted: #8a8f9a;
+    --accent: #5b8cff;
+    --c1: #ff8a5b;
+    --c2: #ffd15b;
+    --c3: #5bd6a4;
+    --c4: #5b9cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 20px;
+  }
+  .container { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  p.subtitle { color: var(--muted); margin-top: 0; margin-bottom: 28px; font-size: 14px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); }
+  .drop-zone span { color: var(--muted); font-size: 13px; display: block; margin-top: 6px; }
+  input[type=file] { display: none; }
+
+  .queue { margin-top: 16px; }
+  .queue-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 8px; font-size: 13px;
+  }
+  .queue-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-item button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
+  .queue-item button:hover { color: var(--c1); }
+  .queue-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 8px 0; }
+
+  .engine-select {
+    display: flex; gap: 10px; margin-top: 18px;
+  }
+  .engine-option {
+    flex: 1; border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; cursor: pointer; text-align: center; font-size: 13px;
+    transition: border-color .15s, background .15s;
+  }
+  .engine-option.selected { border-color: var(--accent); background: rgba(91,140,255,.08); }
+  .engine-option .engine-title { font-weight: 600; margin-bottom: 2px; }
+  .engine-option .engine-desc { color: var(--muted); font-size: 12px; }
+  .engine-select input { display: none; }
+
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+  button.run {
+    background: var(--accent); color: white; border: none; border-radius: 8px;
+    padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.run:disabled { opacity: .5; cursor: not-allowed; }
+  .status { font-size: 13px; color: var(--muted); }
+
+  .summary-panel { display: none; }
+  .summary-panel.show { display: block; }
+  .total-row {
+    text-align: center; margin-bottom: 20px;
+  }
+  .total-row .total-val { font-size: 30px; font-weight: 700; }
+  .total-row .total-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .breakdown { display: flex; flex-direction: column; gap: 10px; }
+  .breakdown-row { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+  .breakdown-row .cat-name { width: 100px; flex-shrink: 0; color: var(--muted); }
+  .breakdown-row .bar-track {
+    flex: 1; height: 10px; border-radius: 6px; background: #1e222c; overflow: hidden;
+  }
+  .breakdown-row .bar-fill { height: 100%; border-radius: 6px; }
+  .breakdown-row .cat-count { width: 70px; text-align: right; flex-shrink: 0; font-weight: 600; }
+
+  .error { color: var(--c1); font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Word Length Classifier</h1>
+  <p class="subtitle">Phân loại và đếm số lượng từ theo độ dài — chạy bằng Spark hoặc Hadoop MapReduce</p>
+
+  <div class="panel">
+    <div class="drop-zone" id="dropZone">
+      <div>Kéo thả file vào đây hoặc bấm để chọn</div>
+      <span>Chỉ nhận file .txt — có thể chọn nhiều file cùng lúc</span>
+      <input type="file" id="fileInput" multiple accept=".txt">
+    </div>
+
+    <div class="queue" id="queue">
+      <div class="queue-empty" id="queueEmpty">Chưa có file nào trong hàng chờ</div>
+    </div>
+
+    <div class="engine-select">
+      <label class="engine-option selected" id="optSpark">
+        <input type="radio" name="engine" value="spark" checked>
+        <div class="engine-title">Spark</div>
+        <div class="engine-desc">spark-submit wordlength.py</div>
+      </label>
+      <label class="engine-option" id="optHadoop">
+        <input type="radio" name="engine" value="hadoop">
+        <div class="engine-title">Hadoop</div>
+        <div class="engine-desc">Hadoop Streaming (mapper/reducer)</div>
+      </label>
+    </div>
+
+    <div class="actions">
+      <button class="run" id="runBtn" disabled>Chạy phân loại</button>
+      <span class="status" id="statusText"></span>
+    </div>
+  </div>
+
+  <div class="panel summary-panel" id="summaryPanel">
+    <div class="total-row">
+      <div class="total-val" id="totalVal">0</div>
+      <div class="total-label">Tổng số từ hợp lệ</div>
+    </div>
+    <div class="breakdown" id="breakdown"></div>
+  </div>
+
+  <div class="error" id="errorBox"></div>
+</div>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const queueEl = document.getElementById('queue');
+  const queueEmpty = document.getElementById('queueEmpty');
+  const runBtn = document.getElementById('runBtn');
+  const statusText = document.getElementById('statusText');
+  const summaryPanel = document.getElementById('summaryPanel');
+  const totalVal = document.getElementById('totalVal');
+  const breakdownEl = document.getElementById('breakdown');
+  const errorBox = document.getElementById('errorBox');
+  const optSpark = document.getElementById('optSpark');
+  const optHadoop = document.getElementById('optHadoop');
+
+  const barColors = { "Rat nho": "var(--c1)", "Nho": "var(--c2)", "Trung binh": "var(--c3)", "Lon": "var(--c4)" };
+
+  let queuedFiles = [];
+
+  [optSpark, optHadoop].forEach(opt => {
+    opt.addEventListener('click', () => {
+      optSpark.classList.remove('selected');
+      optHadoop.classList.remove('selected');
+      opt.classList.add('selected');
+    });
+  });
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    addFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+
+  function addFiles(fileList) {
+    for (const f of fileList) {
+      if (f.name.toLowerCase().endsWith('.txt')) queuedFiles.push(f);
+    }
+    renderQueue();
+  }
+
+  function removeFile(index) {
+    queuedFiles.splice(index, 1);
+    renderQueue();
+  }
+
+  function renderQueue() {
+    queueEl.querySelectorAll('.queue-item').forEach(el => el.remove());
+    queueEmpty.style.display = queuedFiles.length ? 'none' : 'block';
+    queuedFiles.forEach((f, i) => {
+      const item = document.createElement('div');
+      item.className = 'queue-item';
+      item.innerHTML = `<span class="name">${f.name}</span>`;
+      const btn = document.createElement('button');
+      btn.textContent = '✕';
+      btn.onclick = () => removeFile(i);
+      item.appendChild(btn);
+      queueEl.appendChild(item);
+    });
+    runBtn.disabled = queuedFiles.length === 0;
+  }
+
+  runBtn.addEventListener('click', async () => {
+    if (!queuedFiles.length) return;
+
+    const engine = document.querySelector('input[name=engine]:checked').value;
+
+    runBtn.disabled = true;
+    statusText.textContent = engine === 'hadoop'
+      ? `Đang chạy Hadoop Streaming trên ${queuedFiles.length} file... (có thể mất 1-3 phút)`
+      : `Đang chạy Spark trên ${queuedFiles.length} file...`;
+    errorBox.textContent = '';
+    summaryPanel.classList.remove('show');
+
+    const formData = new FormData();
+    formData.append('engine', engine);
+    queuedFiles.forEach(f => formData.append('textfiles', f, f.name));
+
+    try {
+      const res = await fetch('/api/wordlength', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (data.error) {
+        errorBox.textContent = `Lỗi (${data.engine || engine}): ` + data.error;
+        statusText.textContent = 'Thất bại';
+        runBtn.disabled = false;
+        return;
+      }
+
+      totalVal.textContent = data.total_words;
+      breakdownEl.innerHTML = '';
+      data.breakdown.forEach(row => {
+        const div = document.createElement('div');
+        div.className = 'breakdown-row';
+        div.innerHTML = `
+          <div class="cat-name">${row.label}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${(row.ratio*100).toFixed(1)}%; background:${barColors[row.category]}"></div></div>
+          <div class="cat-count">${row.count}</div>
+        `;
+        breakdownEl.appendChild(div);
+      });
+      summaryPanel.classList.add('show');
+
+      statusText.textContent = `Hoàn tất — engine: ${data.engine}, tổng ${data.total_words} từ`;
+    } catch (e) {
+      errorBox.textContent = 'Lỗi kết nối: ' + e.message;
+      statusText.textContent = 'Thất bại';
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

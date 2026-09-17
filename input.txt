@@ -1,0 +1,7 @@
+I am a student
+Hadoop is a distributed system
+Java programming language
+Spark is fast
+Python is easy
+Database administration
+EOF

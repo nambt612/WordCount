@@ -1,0 +1,150 @@
+# README — Phân loại và đếm từ theo độ dài (Word Length Classifier)
+
+## 1. Mô tả bài toán
+
+Xây dựng chương trình áp dụng mô hình **MapReduce** để đọc file văn bản, tách thành từng từ, phân loại mỗi từ theo độ dài, sau đó đếm số lượng từ thuộc mỗi nhóm. Bài toán được triển khai trên **2 engine**: **Apache Spark** và **Hadoop MapReduce (Streaming)** — xem chi tiết kỹ thuật riêng từng engine tại [`SPARK.md`](./SPARK.md) và [`HADOOP.md`](./HADOOP.md).
+
+**Quy tắc phân loại từ:**
+
+| Điều kiện độ dài | Nhóm |
+|---|---|
+| length = 1 | Rất nhỏ |
+| 2 ≤ length ≤ 4 | Nhỏ |
+| 5 ≤ length ≤ 9 | Trung bình |
+| length ≥ 10 | Lớn |
+
+---
+
+## 2. Môi trường triển khai
+
+| Thành phần | Cấu hình |
+|---|---|
+| CPU | 2 CPU |
+| Storage | 40 GB |
+| Memory | 8192 MB |
+| OS | Ubuntu 22.04.5 |
+| Spark | version 3 |
+| Python | version 3 |
+
+---
+
+## 3. Danh sách file trong dự án
+
+| File | Vai trò |
+|---|---|
+| `wordlength.py` | Script Spark — xem chi tiết tại `SPARK.md` |
+| `mapper.py` | Mapper cho Hadoop Streaming — xem chi tiết tại `HADOOP.md` |
+| `reducer.py` | Reducer cho Hadoop Streaming — xem chi tiết tại `HADOOP.md` |
+| `app_wordlength.py` | Flask backend cho giao diện web — nhận file upload, gọi `spark-submit` hoặc `hadoop jar` tùy engine được chọn |
+| `index_wordlength.html` | Giao diện web: kéo-thả nhiều file, chọn engine, xem kết quả dạng biểu đồ |
+
+---
+
+## 4. Cài đặt môi trường
+
+### 4.1 Cài Spark (qua PySpark trong virtual environment)
+
+Cách đơn giản nhất là cài qua `pip` trong 1 virtual environment (không cần tải bản Spark riêng từ Apache):
+
+```bash
+cd ~/Documents/WordCount        # hoặc thư mục làm việc của bạn
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pyspark numpy flask
+```
+
+> **Lưu ý quan trọng:** Lệnh `spark-submit` chỉ tồn tại **bên trong venv** vừa tạo — mỗi khi mở terminal mới hoặc đóng máy, cần `source .venv/bin/activate` lại trước khi chạy bất kỳ lệnh nào liên quan Spark. Prompt terminal phải hiện `(.venv)` ở đầu dòng thì mới đúng.
+
+Xác nhận Spark và Python đã cài đặt đúng (sau khi đã activate venv):
+
+```bash
+spark-submit --version
+python3 --version
+```
+
+### 4.2 Hadoop cluster
+
+Yêu cầu đã có sẵn 1 Hadoop cluster đang chạy (HDFS + YARN). Kiểm tra nhanh trạng thái:
+
+```bash
+hdfs dfsadmin -report
+yarn node -list
+```
+
+Chi tiết kiến trúc và các lệnh Hadoop liên quan xem tại [`HADOOP.md`](./HADOOP.md).
+
+---
+
+## 5. Chạy chương trình bằng dòng lệnh (tay)
+
+**Với Spark:**
+
+```bash
+spark-submit wordlength.py input.txt output
+cat output/part-*
+```
+
+**Với Hadoop:** xem đầy đủ các bước tại [`HADOOP.md`](./HADOOP.md), mục "Chạy tay bằng dòng lệnh".
+
+---
+
+## 6. Chạy chương trình bằng giao diện Web (khuyến nghị — hỗ trợ nhiều file, chọn engine)
+
+Ngoài chạy tay, có thể dùng giao diện web để upload nhiều file `.txt` cùng lúc và chọn engine xử lý (**Spark** hoặc **Hadoop Streaming**) mà không cần gõ lệnh mỗi lần.
+
+### 6.1 Cấu hình (chỉ cần nếu dùng Hadoop)
+
+Mở `app_wordlength.py`, sửa 3 biến cấu hình đầu file cho đúng với máy/cluster của bạn:
+
+```python
+HADOOP_STREAMING_JAR = "/opt/hadoop/share/hadoop/tools/lib/hadoop-streaming-3.3.6.jar"
+HDFS_INPUT_DIR = "/user/master/wordlength_input"
+HDFS_OUTPUT_DIR = "/user/master/wordlength_output"
+```
+
+### 6.2 Chạy server
+
+```bash
+cd ~/Documents/WordCount
+source .venv/bin/activate
+python3 app_wordlength.py
+```
+
+Mở trình duyệt: `http://localhost:5001`
+
+### 6.3 Sử dụng
+
+1. Kéo-thả hoặc chọn nhiều file `.txt` vào ô upload
+2. Chọn engine: **Spark** hoặc **Hadoop**
+3. Bấm **"Chạy phân loại"**
+4. Kết quả hiển thị: tổng số từ hợp lệ + biểu đồ tỷ lệ 4 nhóm (Rất nhỏ / Nhỏ / Trung bình / Lớn)
+
+> **Gợi ý khi demo/thuyết trình:** Có thể mở song song UI quản trị Hadoop (YARN ResourceManager, thường ở `http://<namenode>:8088`, hoặc HDFS NameNode UI ở `:9870`) — khi bấm "Hadoop" trên giao diện web, 1 MapReduce job sẽ xuất hiện thật sự trên đó, là bằng chứng trực quan cho thấy Hadoop cluster đang thực sự xử lý dữ liệu, không phải giả lập.
+
+---
+
+## 7. Kết quả mẫu
+
+Với file `input.txt` mẫu (6 dòng, xem `SPARK.md` mục "Bước 1"):
+
+| Nhóm | Số lượng |
+|---|---|
+| Rất nhỏ | 3 |
+| Nhỏ | 9 |
+| Trung bình | 7 |
+| Lớn | 3 |
+
+Tổng cộng 22 từ hợp lệ (sau khi loại ký tự đặc biệt) được phân bổ vào 4 nhóm theo độ dài.
+
+---
+
+## 8. Xử lý sự cố chung
+
+| Lỗi | Nguyên nhân | Cách khắc phục |
+|---|---|---|
+| `spark-submit: command not found` | Chưa activate venv (nơi cài PySpark), hoặc venv đã bị xóa | Kiểm tra prompt có `(.venv)` chưa: `source .venv/bin/activate`. Nếu venv đã xóa, tạo lại theo mục 4.1 |
+| `ModuleNotFoundError: No module named 'pyspark'` khi chạy bằng `python3` trực tiếp | Chạy script bằng `python3 wordlength.py ...` thay vì `spark-submit wordlength.py ...` | Luôn chạy bằng `spark-submit wordlength.py input.txt output`, không dùng `python3` trực tiếp |
+| Không thấy `part-*` nào trong output | Sai đường dẫn `input.txt`, RDD rỗng | Kiểm tra lại `cat input.txt` và đường dẫn truyền vào `spark-submit` |
+| Kết quả trống hoặc thiếu nhóm | File input rỗng hoặc toàn ký tự đặc biệt bị loại bỏ hết | Kiểm tra lại nội dung file input |
+
+Các lỗi riêng của từng engine (Spark hoặc Hadoop) xem tại file tương ứng: [`SPARK.md`](./SPARK.md) hoặc [`HADOOP.md`](./HADOOP.md).
